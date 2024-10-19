@@ -14,7 +14,11 @@
     "skipLibCheck": true,
     "skipDefaultLibCheck": true,
     "baseUrl": ".",
-    "paths": {}
+    "paths": {
+      "@todo-fullstack-monorepo/auth": ["auth/src/index.ts"],
+      "@todo-fullstack-monorepo/shared": ["shared/src/index.ts"],
+      "@todo-fullstack-monorepo/users": ["users/src/index.ts"]
+    }
   },
   "exclude": ["node_modules", "tmp"]
 }
