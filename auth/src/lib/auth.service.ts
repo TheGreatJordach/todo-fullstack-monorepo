@@ -1,14 +1,23 @@
-import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import {
+  ConflictException,
+  HttpException,
+  HttpStatus,
+  Injectable,
+  InternalServerErrorException,
+  Logger
+} from '@nestjs/common';
 import { CreateUserDTO, IAMIdentifier, LogInDto } from '@todo-fullstack-monorepo/shared';
 import { UsersService } from '@todo-fullstack-monorepo/users';
 import { User } from '@prisma/client';
 import { PasswordService } from './password/password.service';
+import { JwtTokenProvider } from './jwt/jwt.token.provider';
 
 @Injectable()
 export class AuthService {
-
+private readonly logger = new Logger('AuthService');
   constructor(private readonly userService: UsersService,
-              private readonly passwordService: PasswordService) {
+              private readonly passwordService: PasswordService,
+              private readonly tokenProvider: JwtTokenProvider,) {
   }
 
 
@@ -16,7 +25,7 @@ export class AuthService {
 
     const identifier = {email: logInDto.email} as IAMIdentifier
     // Search user by email
-    const storedUser: User | null = await this.verityUser(identifier)
+    const storedUser: User | null = await this.getUserByIdentifier(identifier)
     // If User not found -> throw an Exception
     if(!storedUser){
       throw new HttpException({
@@ -36,54 +45,36 @@ export class AuthService {
         message: "Access denied - wrong email or password "
       }, HttpStatus.UNAUTHORIZED)
     }
-    // TODO : if isMatch --> return jwt token
-  return {
-    success: true,
-    data:storedUser,
-    message: "You are successfully logIn"
-  }
+    //if isMatch --> return jwt token
+
+  return await this.tokenProvider.generateToken(storedUser)
 
   }
   async singUp(createUserDto:CreateUserDTO){
     // Search user by email
     const identifier = {email: createUserDto.email} as IAMIdentifier
-    const storedUser: User | null = await this.verityUser(identifier)
+    const storedUser: User | null = await this.getUserByIdentifier(identifier)
     // If User not found -> throw an Exception
     if(storedUser){
-      throw new HttpException({
-        error: "AuthError",
-        success:false,
-        data: null,
-        message :`Email ${identifier.email} is already used` }, HttpStatus.UNAUTHORIZED)
+      throw new ConflictException(identifier.email)
     }
 
     const hashPassword = await this.passwordService.encryptPassword(createUserDto.password)
     if(!hashPassword){
-      throw new HttpException({
-        error: "AuthError",
-        success:false,
-        data: null,
-        message :`Failed to store password, HttpStatus.UNAUTHORIZED)`
-        }, HttpStatus.UNAUTHORIZED)
+      throw new InternalServerErrorException('AuthService', 'Failed to encrypt password');
   }
-    
+
     const createdUser = await this.userService.create({...createUserDto, password:hashPassword})
 
     if(!createdUser){
-      throw new HttpException({
-        error: "AuthError",
-        success:false,
-        data: null,
-        message :`Failed to store new User ${createUserDto.name})`
-      }, HttpStatus.UNAUTHORIZED)
+      this.logger.error('Failed to create user', { identifier, error: 'User creation failed' });
+
+      throw new InternalServerErrorException('AuthService', 'Failed to create new User')
     }
-    return {
-      success: true,
-      data:createdUser,
-      message:"New user created"
-    }
+
+   return await this.tokenProvider.generateToken(createdUser)
  }
-  async verityUser(identifier:IAMIdentifier): Promise<User | null>{
+  async getUserByIdentifier(identifier:IAMIdentifier): Promise<User | null>{
     // Search user by email
     return  await this.userService.findByIdentifier(identifier.email as IAMIdentifier)
     }
